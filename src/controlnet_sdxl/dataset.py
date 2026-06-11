@@ -104,6 +104,11 @@ def prepare_train_dataset(args, dataset, accelerator):
     """
 
     def adaptative_image_trans(original_size):
+        """
+        Apply resizing and cropping transformations on target images 
+        according to their original size to avoid too much distortion
+        """
+        
         if original_size[0] > 2 * original_size[1]:
             crop_shape = (original_size[1], original_size[1] * 2)
         else:
@@ -124,6 +129,9 @@ def prepare_train_dataset(args, dataset, accelerator):
         return image_transforms
 
     def adaptative_cond_trans(original_size):
+        """Apply resizing and cropping transformations on conditioning images 
+        according to their original size to avoid too much distortion
+        """
         if original_size[0] > 2 * original_size[1]:
             crop_shape = (original_size[1], original_size[1] * 2)
         else:
@@ -175,7 +183,10 @@ def prepare_train_dataset(args, dataset, accelerator):
         return distortion
 
     def augment_train(image, conditioning_image, syn_bool):
-        """Add augmentation techniques on input image
+        """Add augmentation techniques on input image like:
+        - Removing segmentation maps for some images and leaving only canny edges for control
+        - Replacing some segments with black mask for the model to guess from shape
+        - Removing canny edges for some images to leave just seg maps
 
         Args:
             image (pil image): Target image
@@ -282,6 +293,7 @@ def prepare_train_dataset(args, dataset, accelerator):
             dist_x = generate_wave(conditioning_image_array.shape[1])
 
             im_shifted = np.copy(conditioning_image_array)
+            # Shift each column and row of the image according to the generated wave function
             for i in range(conditioning_image_array.shape[1]):
                 # Shift each column with 'shift' pixels, the value of the shift is given from the wave function
                 shift = int(6 * dist_x[i])
@@ -317,7 +329,7 @@ def prepare_train_dataset(args, dataset, accelerator):
         return conditioning_image
 
     def preprocess_train(examples):
-        """Apply augmentation techniques than transformations on images
+        """Apply augmentation techniques then transformations on images
 
         Args:
             examples (Dataset): a fragment of the input dataset
@@ -335,8 +347,9 @@ def prepare_train_dataset(args, dataset, accelerator):
 
             # Augment conditioning images
             cond_im = augment_train(im, cond_im, examples["syn_or_real"][i])
-            # Transform images
+            # Transform images 
             images.append(adaptative_image_trans(im.size)(im))
+            # Transform conditioning images using nearest interpolation to avoid creating new values that do not correspond to any class in the segmentation maps
             conditioning_images.append(adaptative_cond_trans(cond_im.size)(cond_im))
 
         examples["pixel_values"] = images
@@ -351,7 +364,7 @@ def prepare_train_dataset(args, dataset, accelerator):
 
 
 def collate_fn(examples):
-    """stack inputs in torch tensors
+    """stack inputs in torch tensors to be able to pass them to the model in batches
 
     Args:
         examples (Dataset): input dataset fragment
@@ -369,6 +382,7 @@ def collate_fn(examples):
         memory_format=torch.contiguous_format
     ).float()
 
+    # Stacking prompt and text embeds that are already generated and stored
     prompt_ids = torch.stack(
         [torch.tensor(example["prompt_embeds"]) for example in examples]
     )
@@ -376,6 +390,7 @@ def collate_fn(examples):
     add_text_embeds = torch.stack(
         [torch.tensor(example["text_embeds"]) for example in examples]
     )
+    # time ids are used to condition the attention layers of the unet to understand at which step of the denoising process we are, I add them as a conditioning information for the model to learn to adapt its attention maps according to the time step
     add_time_ids = torch.stack(
         [torch.tensor(example["time_ids"]) for example in examples]
     )
