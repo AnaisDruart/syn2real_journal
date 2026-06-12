@@ -389,7 +389,7 @@ def main(args):
         vae.to(accelerator.device, dtype=weight_dtype)
     else:
         vae.to(accelerator.device, dtype=torch.float32)
-    unet.to(accelerator.device, dtype=weight_dtype)
+    unet.to("cpu", dtype=weight_dtype)  # offloaded: moved to GPU only during forward
 
     # Then get the training dataset ready to be passed to the dataloader.
     train_dataset = prepare_train_dataset(args, train_dataset_original, accelerator)
@@ -567,6 +567,7 @@ def main(args):
                 )
 
                 # Predict the noise residual
+                unet.to(accelerator.device, dtype=weight_dtype)
                 model_pred = unet(
                     noisy_latents,
                     timesteps,
@@ -581,6 +582,8 @@ def main(args):
                     ),
                     return_dict=False,
                 )[0]
+                unet.to("cpu")
+                torch.cuda.empty_cache()
 
                 # Get the target for loss depending on the prediction type
                 if noise_scheduler.config.prediction_type == "epsilon":
