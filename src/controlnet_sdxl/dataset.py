@@ -39,7 +39,7 @@ def get_train_dataset(args, accelerator, logger):
     else:
         if args.train_data_dir is not None:
             dataset = load_dataset(
-                args.train_data_dir, cache_dir=args.cache_dir, trust_remote_code=True
+                args.train_data_dir, cache_dir=args.cache_dir
             )
         # See more about loading custom images at
         # https://huggingface.co/docs/datasets/v2.0.0/en/dataset_script
@@ -342,8 +342,10 @@ def prepare_train_dataset(args, dataset, accelerator):
         conditioning_images = []
         for i in range(len(examples[args.image_column])):
             # convert image to RGB format
-            im = examples[args.image_column][i].convert("RGB")
-            cond_im = examples[args.conditioning_image_column][i].convert("RGB")
+            im_raw = examples[args.image_column][i]
+            im = (Image.open(im_raw) if isinstance(im_raw, str) else im_raw).convert("RGB")
+            cond_raw = examples[args.conditioning_image_column][i]
+            cond_im = (Image.open(cond_raw) if isinstance(cond_raw, str) else cond_raw).convert("RGB")
 
             # Augment conditioning images
             cond_im = augment_train(im, cond_im, examples["syn_or_real"][i])
