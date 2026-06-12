@@ -5,3 +5,4 @@ src/controlnet_sdxl/new_users.txt
 *pyc
 *coverage
 *.pkl
+*.pdf
